@@ -1,32 +1,30 @@
 import streamlit as st
 import google.generativeai as genai
-import pandas as pd
 import docx
-import fitz # PyMuPDF
+import fitz  # PyMuPDF
 import io
 import re
-from docx.enum.text import WD_COLOR_INDEX # <-- IMPORT BARU
+from docx.enum.text import WD_COLOR_INDEX
 
 # --- Konfigurasi Awal ---
 st.set_page_config(
     page_title="Proofreader Bahasa Indonesia",
-    page_icon="\u270D\ufe0f",
     layout="wide"
 )
 
-st.title("\u270D\ufe0f" "Proofreader Bahasa Indonesia (KBBI & PUEBI)")
+st.title("Proofreader Bahasa Indonesia (KBBI & PUEBI)")
 st.caption("Unggah dokumen (PDF/DOCX) untuk mendeteksi kesalahan ketik, ejaan, dan tata bahasa.")
 
 # --- Konfigurasi API Key (LEBIH AMAN) ---
 try:
-    api_key = st.secrets["GOOGLE_API_KEY"]
+    api_key = st.secrets["GOOGLE_API_KEY")
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
 except KeyError:
-    st.error("Google API Key belum diatur. Harap atur di Streamlit Secrets.", icon="\U0001F6A8")
+    st.error("Google API Key belum diatur. Harap atur di Streamlit Secrets.")
     st.stop()
 except Exception as e:
-    st.error(f"Terjadi masalah saat mengkonfigurasi Google AI: {e}", icon="\U0001F525")
+    st.error(f"Terjadi masalah saat mengkonfigurasi Google AI: {e}")
     st.stop()
 
 # --- FUNGSI-FUNGSI UTAMA ---
@@ -52,8 +50,6 @@ def extract_text_with_pages(uploaded_file):
         try:
             doc = docx.Document(io.BytesIO(file_bytes))
             full_text = "\n".join([para.text for para in doc.paragraphs])
-            # Untuk DOCX, kita anggap sebagai 1 halaman agar tidak membebani AI
-            # dan mempermudah proses revisi dokumen nantinya.
             pages_content.append({"halaman": 1, "teks": full_text})
         except Exception as e:
             st.error(f"Gagal membaca file DOCX: {e}")
@@ -92,34 +88,22 @@ def proofread_with_gemini(text_to_check):
         response = model.generate_content(prompt)
         pattern = re.compile(r"\[SALAH\]\s*(.*?)\s*->\s*\[BENAR\]\s*(.*?)\s*(\n|$)", re.IGNORECASE)
         found_errors = pattern.findall(response.text)
-
-        # Mengambil grup pertama dan kedua dari setiap match
         return [{"salah": salah.strip(), "benar": benar.strip()} for salah, benar, _ in found_errors]
     except Exception as e:
         st.error(f"Terjadi kesalahan saat menghubungi AI: {e}")
         return []
 
-def convert_df_to_excel(df):
-    """Mengonversi DataFrame ke format Excel dalam memory."""
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Hasil Proofread')
-    return output.getvalue()
-
-# --- FUNGSI BARU UNTUK MEMBUAT OUTPUT DOKUMEN ---
+# --- FUNGSI UNTUK MEMBUAT OUTPUT DOKUMEN ---
 
 def generate_revised_docx(file_bytes, errors):
     """Membuat dokumen .docx dengan semua kesalahan yang sudah diperbaiki."""
     doc = docx.Document(io.BytesIO(file_bytes))
-    
-    # Iterasi mundur agar penggantian tidak mengganggu indeks
     for error in reversed(errors):
         salah = error["Kata/Frasa Salah"]
         benar = error["Perbaikan Sesuai KBBI"]
         for para in doc.paragraphs:
             if salah in para.text:
                 para.text = para.text.replace(salah, benar)
-                
     output_buffer = io.BytesIO()
     doc.save(output_buffer)
     return output_buffer.getvalue()
@@ -127,19 +111,13 @@ def generate_revised_docx(file_bytes, errors):
 def generate_highlighted_docx(file_bytes, errors):
     """Membuat dokumen .docx dengan semua kesalahan yang di-highlight."""
     doc = docx.Document(io.BytesIO(file_bytes))
-    
-    # Mengambil daftar unik kata/frasa yang salah
     unique_salah = set(error["Kata/Frasa Salah"] for error in errors)
-    
     for para in doc.paragraphs:
         for term in unique_salah:
-            # Melakukan pengecekan apakah term ada di dalam paragraf
             if term in para.text:
-                # Memberi highlight pada setiap 'run' yang mengandung kata/frasa salah
                 for run in para.runs:
                     if term in run.text:
                         run.font.highlight_color = WD_COLOR_INDEX.YELLOW
-                        
     output_buffer = io.BytesIO()
     doc.save(output_buffer)
     return output_buffer.getvalue()
@@ -154,7 +132,7 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
     st.info(f"File yang diunggah: **{uploaded_file.name}**")
 
-    if st.button("\U0001F50D" "Mulai Analisis", type="primary", use_container_width=True):
+    if st.button("Mulai Analisis", type="primary", use_container_width=True):
         with st.spinner("Membaca dan mengekstrak teks dari dokumen..."):
             document_pages = extract_text_with_pages(uploaded_file)
         
@@ -162,13 +140,11 @@ if uploaded_file is not None:
             st.success(f"Ekstraksi teks berhasil. Memproses {len(document_pages)} bagian teks.")
             
             all_errors = []
-            
             progress_bar = st.progress(0, text="Menganalisis teks dengan AI...")
             
             for i, page in enumerate(document_pages):
                 progress_text = f"Menganalisis Bagian {i + 1}/{len(document_pages)}..."
                 progress_bar.progress((i + 1) / len(document_pages), text=progress_text)
-                
                 found_errors_on_page = proofread_with_gemini(page['teks'])
                 
                 for error in found_errors_on_page:
@@ -185,21 +161,20 @@ if uploaded_file is not None:
             else:
                 st.warning(f"Ditemukan **{len(all_errors)}** potensi kesalahan dalam dokumen.")
                 
-                df = pd.DataFrame(all_errors)
-                st.dataframe(df, use_container_width=True)
+                # Menampilkan hasil dalam bentuk tabel sederhana
+                st.table(all_errors)
                 
-                # --- BAGIAN DOWNLOAD YANG DIMODIFIKASI ---
-                st.subheader("Download Hasil")
+                # --- BAGIAN DOWNLOAD YANG DISERDERHANAKAN ---
+                st.subheader("Unduh Hasil")
                 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
 
                 with col1:
-                    # Tombol unduh hasil revisi (DOCX)
                     if uploaded_file.name.endswith('.docx'):
                         with st.spinner("Membuat file revisi..."):
                             revised_docx_data = generate_revised_docx(uploaded_file.getvalue(), all_errors)
                             st.download_button(
-                                label="\U0001F4E5" "Unduh DOCX (Sudah Direvisi)",
+                                label="Unduh DOCX (Sudah Direvisi)",
                                 data=revised_docx_data,
                                 file_name=f"revisi_{uploaded_file.name}",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -207,25 +182,13 @@ if uploaded_file is not None:
                             )
                 
                 with col2:
-                    # Tombol unduh hasil highlight (DOCX)
                     if uploaded_file.name.endswith('.docx'):
                         with st.spinner("Membuat file highlight..."):
                             highlighted_docx_data = generate_highlighted_docx(uploaded_file.getvalue(), all_errors)
                             st.download_button(
-                                label="\U0001F4DD" "Unduh DOCX (Highlight Kesalahan)",
+                                label="Unduh DOCX (Highlight Kesalahan)",
                                 data=highlighted_docx_data,
                                 file_name=f"highlight_{uploaded_file.name}",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True
                             )
-
-                with col3:
-                    # Tombol unduh hasil dalam bentuk Excel
-                    excel_data = convert_df_to_excel(df)
-                    st.download_button(
-                        label="\U0001F4C4" "Unduh Laporan (Excel)",
-                        data=excel_data,
-                        file_name=f"laporan_proofread_{uploaded_file.name.split('.')[0]}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
